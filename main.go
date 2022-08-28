@@ -11,7 +11,7 @@ import (
 
 func main() {
 	var expr = `
-		(false || true) && true
+		 add_one(2) == 3 
 	`
 	t, err := parser.ParseExpr(expr)
 	if err != nil {
@@ -20,9 +20,18 @@ func main() {
 	if err := ast.Print(token.NewFileSet(), t); err != nil {
 		panic(err)
 	}
-	ctx := &internal.EvalContext{}
-	ast.Walk(ctx, t)
-	for _, t := range ctx.Tokens {
-		fmt.Println(t)
+
+	fn := func(args ...interface{}) (interface{}, error) {
+		return args[0].(int64) + 1, nil
 	}
+	ectx := internal.NewEvalContext(map[string]interface{}{
+		"add_one": internal.FnType(fn),
+	})
+	pctx := internal.NewParseContext()
+
+	val, err := internal.VisitNode(ectx, pctx, t)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("result: %+v", val)
 }

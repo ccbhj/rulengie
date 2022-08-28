@@ -2,96 +2,63 @@ package internal
 
 import (
 	"bytes"
-	"go/ast"
 	"reflect"
 
 	"github.com/pkg/errors"
 )
 
-var _ ast.Visitor = (*EvalContext)(nil)
+var ErrUnsupportSymbol = errors.Errorf("unsupport symbol")
+
+var defaultOpFnTab = map[SymbolKind]EvalFn{
+	SymAnd:   EvalLAnd,
+	SymOr:    EvalLOr,
+	SymEq:    EvalEq,
+	SymNot:   EvalNot,
+	SymDot:   EvalDot,
+	SymMinus: EvalMinus,
+
+	SymLess:      newCmpEvalFn(SymLess),
+	SymLessEq:    newCmpEvalFn(SymLessEq),
+	SymGreater:   newCmpEvalFn(SymGreater),
+	SymGreaterEq: newCmpEvalFn(SymGreaterEq),
+}
+
+var defaultSymbolTab = map[string]interface{}{
+	"true":  true,
+	"false": false,
+}
+
+type FnType func(args ...interface{}) (interface{}, error)
 
 type EvalContext struct {
-	Tokens    []Token
-	symbolTab map[string]Sym
-	opFn      map[SymbolKind]OpFn
+	symbolTab map[string]interface{}
+	opFnTab   map[SymbolKind]EvalFn
 }
 
-type EvalFn func(ctx *EvalContext, args ...interface{}) interface{}
+type EvalFn func(ctx *EvalContext, args ...interface{}) (interface{}, error)
 
-func (p *EvalContext) Visit(node ast.Node) ast.Visitor {
-	if node == nil {
-		return nil
-	}
-	switch v := node.(type) {
-	case *ast.UnaryExpr:
-		op := token2Sym(v.Op)
-		if op.kind == SymUnknown {
-			panic(NewUnsupportOpErr(int(v.Pos())))
+func NewEvalContext(injected map[string]interface{}) *EvalContext {
+	symTab := make(map[string]interface{}, len(injected)+len(defaultSymbolTab))
+	for _, tab := range []map[string]interface{}{
+		injected,
+		defaultSymbolTab,
+	} {
+		for k, v := range tab {
+			symTab[k] = v
 		}
-		p.Tokens = append(p.Tokens, op)
-	case *ast.BinaryExpr:
-		op := token2Sym(v.Op)
-		if op.kind == SymUnknown {
-			panic(NewUnsupportOpErr(int(v.Pos())))
-		}
-		p.Tokens = append(p.Tokens, op)
-	case *ast.SelectorExpr:
-		p.Tokens = append(p.Tokens, Sym{2, SymDot})
-	case *ast.BasicLit:
-		p.Tokens = append(p.Tokens, basicLit2Operand(v))
-	case *ast.Ident:
-		p.Tokens = append(p.Tokens, Sym{2, SymId})
-		p.Tokens = append(p.Tokens, Operand{
-			val:  v.Name,
-			txt:  v.Name,
-			kind: reflect.String,
-		})
-	case *ast.ParenExpr:
-		// do nothing
-	default:
-		panic(NewInvalidSyntax(int(node.Pos())))
 	}
-	return p
+	return &EvalContext{
+		symbolTab: symTab,
+		opFnTab:   defaultOpFnTab,
+	}
 }
 
-func (c *EvalContext) Eval() (interface{}, error) {
-	if len(c.Tokens) == 0 {
-		return nil, nil
+func (c *EvalContext) Eval(sym SymbolKind, args ...interface{}) (interface{}, error) {
+	fn := c.opFnTab[sym]
+	if fn == nil {
+		return nil, errors.Wrapf(ErrUnsupportSymbol, "%s", sym)
 	}
-	var (
-		i   = len(c.Tokens) - 1
-		stk = NewStack(len(c.Tokens))
-	)
-	for i > 0 {
-		var sym Sym
-		t := c.Tokens[i]
-		switch v := t.(type) {
-		case Operand:
-			stk.Push(v)
-			i--
-			continue
-		case Sym:
-			sym = v
-			break
-		default:
-			panic("invalid value in tokens")
-		}
-
-		vals := stk.PopN(sym.noperand)
-		if len(vals) != sym.noperand {
-			return nil, errors.New("evaluate error, no enough operand")
-		}
-
-		fn := c.opFn[sym.kind]
-		if fn == nil {
-			return nil, errors.Errorf("apply function for %s is nil or not register", sym.kind)
-		}
-		val := fn(c, vals...)
-		stk.Push(val)
-		i--
-	}
-
-	return stk.Pop(), nil
+	return fn(c, args...)
 }
 
 func EvalId(ctx *EvalContext, args ...interface{}) (interface{}, error) {
@@ -99,13 +66,13 @@ func EvalId(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 		return nil, errors.New("invalid number of argument")
 	}
 
-	id, ok := args[0].(string)
-	if !ok {
+	id, in := args[0].(string)
+	if !in {
 		return nil, errors.New("first argument is not a string")
 	}
 
-	val, ok := ctx.symbolTab[id]
-	if !ok {
+	val, in := ctx.symbolTab[id]
+	if !in {
 		return nil, errors.Errorf("symbol %s not found", id)
 	}
 	return val, nil
@@ -261,4 +228,56 @@ func ObjectsAreEqualValues(expected, actual interface{}) bool {
 	}
 
 	return false
+}
+
+func evalIntCmp(sym SymbolKind, x, y int64) (bool, error) {
+	switch sym {
+	case SymLess:
+		return x < y, nil
+	case SymLessEq:
+		return x <= y, nil
+	case SymGreater:
+		return x > y, nil
+	case SymGreaterEq:
+		return x >= y, nil
+	}
+	return false, errors.New("unsupport type to compare")
+}
+
+func evalFloat64Cmp(sym SymbolKind, x, y float64) (bool, error) {
+	switch sym {
+	case SymLess:
+		return x-y < 1e-6, nil
+	case SymLessEq:
+		return x-y <= 1e-6, nil
+	case SymGreater:
+		return y-x < 1e-6, nil
+	case SymGreaterEq:
+		return y-x <= 1e-6, nil
+	}
+	return false, errors.New("unsupport type to compare")
+}
+
+func newCmpEvalFn(sym SymbolKind) EvalFn {
+	return func(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+		if len(args) != 2 {
+			return nil, errors.New("invalid number of argument")
+		}
+
+		x, y := args[0], args[1]
+
+		i1, ok1 := x.(int64)
+		i2, ok2 := y.(int64)
+		if ok1 && ok2 {
+			return evalIntCmp(sym, i1, i2)
+		}
+
+		f1, ok1 := x.(float64)
+		f2, ok2 := y.(float64)
+		if ok1 && ok2 {
+			return evalFloat64Cmp(sym, f1, f2)
+		}
+
+		return nil, errors.New("invalid type for comparing")
+	}
 }

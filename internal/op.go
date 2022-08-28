@@ -2,73 +2,61 @@ package internal
 
 import (
 	"go/token"
-	"reflect"
 )
 
-type (
-	TokenKind int
-
-	Token interface {
-		_token()
-	}
-
-	SymbolKind string
-	Sym        struct {
-		noperand int
-		kind     SymbolKind
-	}
-
-	Operand struct {
-		val  interface{}
-		txt  string
-		kind reflect.Kind
-	}
-
-	OpFn func(*EvalContext, ...interface{}) interface{}
-)
+type SymbolKind int
 
 const (
-	SymUnknown            = "unknown"
-	SymAnd     SymbolKind = "&&"
-	SymOr      SymbolKind = "||"
-	SymEq      SymbolKind = "=="
-	SymNot     SymbolKind = "!"
-	SymDot     SymbolKind = "."
-	SymId      SymbolKind = "id"
-	SymMinus   SymbolKind = "~"
+	SymUnknown SymbolKind = iota
+	SymAnd
+	SymOr
+	SymEq
+	SymNot
+	SymDot
+	SymMinus
+	SymLess
+	SymLessEq
+	SymGreater
+	SymGreaterEq
 )
 
-var token2SymTab = map[token.Token]Sym{
-	token.LAND: {
-		noperand: 2,
-		kind:     SymAnd,
-	},
-	token.LOR: {
-		noperand: 1,
-		kind:     SymOr,
-	},
-	token.NOT: {
-		noperand: 1,
-		kind:     SymOr,
-	},
-	token.EQL: {
-		noperand: 1,
-		kind:     SymEq,
-	},
-	token.SUB: {
-		noperand: 1,
-		kind:     SymMinus,
-	},
+var token2SymTab = map[token.Token]SymbolKind{
+	token.LAND: SymAnd,
+	token.LOR:  SymOr,
+	token.NOT:  SymOr,
+
+	token.EQL: SymEq,
+	token.LSS: SymLess,
+	token.LEQ: SymLessEq,
+	token.GTR: SymGreater,
+	token.GEQ: SymGreaterEq,
+
+	token.SUB: SymMinus,
 }
 
-func (Sym) _token() {}
+func (s SymbolKind) String() string {
+	switch s {
+	case SymAnd:
+		return "&&"
+	case SymOr:
+		return "||"
+	case SymNot:
+		return "!"
 
-func (Operand) _token() {}
-
-func (s Sym) String() string {
-	return string(s.kind)
-}
-
-func (o Operand) String() string {
-	return o.txt
+	case SymEq:
+		return "=="
+	case SymLess:
+		return "<"
+	case SymLessEq:
+		return "<="
+	case SymGreater:
+		return ">"
+	case SymGreaterEq:
+		return ">="
+	case SymDot:
+		return "."
+	case SymMinus:
+		return "-"
+	}
+	return "unknown"
 }
