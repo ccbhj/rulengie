@@ -1,4 +1,4 @@
-package internal
+package expr
 
 import (
 	"go/token"
@@ -11,6 +11,7 @@ const (
 	SymAnd
 	SymOr
 	SymEq
+	SymNeq
 	SymNot
 	SymDot
 	SymMinus
@@ -23,9 +24,10 @@ const (
 var token2SymTab = map[token.Token]SymbolKind{
 	token.LAND: SymAnd,
 	token.LOR:  SymOr,
-	token.NOT:  SymOr,
+	token.NOT:  SymNot,
 
 	token.EQL: SymEq,
+	token.NEQ: SymNeq,
 	token.LSS: SymLess,
 	token.LEQ: SymLessEq,
 	token.GTR: SymGreater,
@@ -45,6 +47,8 @@ func (s SymbolKind) String() string {
 
 	case SymEq:
 		return "=="
+	case SymNeq:
+		return "!="
 	case SymLess:
 		return "<"
 	case SymLessEq:
@@ -53,6 +57,7 @@ func (s SymbolKind) String() string {
 		return ">"
 	case SymGreaterEq:
 		return ">="
+
 	case SymDot:
 		return "."
 	case SymMinus:
