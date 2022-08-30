@@ -53,7 +53,7 @@ func (r *RuleEngine) ExecuteOneRule(ctx context.Context, workflow string, params
 		ectx := expr.NewEvalContext(p)
 		result, err := pctx.ParseAndEval(ectx)
 		if err != nil {
-			log.Printf("fail to parse and eval rule")
+			log.Println("fail to ExecuteOneRule")
 			continue
 		}
 		var matched bool
@@ -62,7 +62,7 @@ func (r *RuleEngine) ExecuteOneRule(ctx context.Context, workflow string, params
 			matched = v
 			break
 		default:
-			log.Printf("rule not return boolean")
+			log.Println("rule not return a boolean")
 			continue
 		}
 

@@ -19,6 +19,8 @@ const (
 	SymLessEq
 	SymGreater
 	SymGreaterEq
+
+	SymParen
 )
 
 var token2SymTab = map[token.Token]SymbolKind{
@@ -62,6 +64,9 @@ func (s SymbolKind) String() string {
 		return "."
 	case SymMinus:
 		return "-"
+
+	case SymParen:
+		return "()"
 	}
 	return "unknown"
 }

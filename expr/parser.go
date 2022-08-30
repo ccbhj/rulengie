@@ -12,7 +12,7 @@ import (
 
 // ParseFn is a function to parse for a specified ast node,
 // each ast node we support should have a ParseFn
-type ParseFn func(*EvalContext, *ParseContext, ast.Node) (interface{}, error)
+type ParseFn func(EvalContext, *ParseContext, ast.Node) (interface{}, error)
 
 // ParseContext maintains states when the expression was parsed,
 // it mainly tells the [ParseNode] how to parse an ast node.
@@ -54,12 +54,12 @@ func ParseExpr(exp string, sym SymbolTab) (interface{}, error) {
 	return parseNode(ectx, pctx, pctx.astRoot)
 }
 
-func (p *ParseContext) ParseAndEval(ectx *EvalContext) (interface{}, error) {
+func (p *ParseContext) ParseAndEval(ectx EvalContext) (interface{}, error) {
 	return parseNode(ectx, p, p.astRoot)
 }
 
 // parseNode parses an ast node and evaluate its value recursively
-func parseNode(ectx *EvalContext, pctx *ParseContext, n ast.Node) (interface{}, error) {
+func parseNode(ectx EvalContext, pctx *ParseContext, n ast.Node) (interface{}, error) {
 	t := reflect.TypeOf(n)
 	v, found := pctx.parserTab[t]
 	if !found {
@@ -70,7 +70,7 @@ func parseNode(ectx *EvalContext, pctx *ParseContext, n ast.Node) (interface{}, 
 
 // binaryExprParser parses left and right hand side values and evaluated by the
 // operator like comparator and logic operator
-func binaryExprParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
+func binaryExprParser(ectx EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
 	bn := node.(*ast.BinaryExpr)
 	sym := token2Sym(bn.Op)
 	if sym == SymUnknown {
@@ -90,7 +90,7 @@ func binaryExprParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (int
 
 // unaryExprParser parses the left hand side value and evaluate by the operator
 // like minus
-func unaryExprParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
+func unaryExprParser(ectx EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
 	bn := node.(*ast.UnaryExpr)
 	sym := token2Sym(bn.Op)
 	if sym == SymUnknown {
@@ -109,7 +109,7 @@ func unaryExprParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (inte
 //
 // Integer will be parsed into int64, string/char will be paresed into string
 // and float will be parsed into float64
-func basicLitParser(_ *EvalContext, _ *ParseContext, node ast.Node) (interface{}, error) {
+func basicLitParser(_ EvalContext, _ *ParseContext, node ast.Node) (interface{}, error) {
 	bl := node.(*ast.BasicLit)
 	switch bl.Kind {
 	case token.STRING:
@@ -124,9 +124,9 @@ func basicLitParser(_ *EvalContext, _ *ParseContext, node ast.Node) (interface{}
 
 // indentParser parse [ast.Indent], then look up the symbol table and return
 // the value, if no value is found in symbol table, an error will be thrown.
-func indentParser(ectx *EvalContext, _ *ParseContext, node ast.Node) (interface{}, error) {
+func indentParser(ectx EvalContext, _ *ParseContext, node ast.Node) (interface{}, error) {
 	id := node.(*ast.Ident)
-	val, in := ectx.symbolTab[id.Name]
+	val, in := ectx.LookupSymbol(id.Name)
 	if !in {
 		return nil, newParseErr(node, "unknown symbol %s", id.Name)
 	}
@@ -135,7 +135,7 @@ func indentParser(ectx *EvalContext, _ *ParseContext, node ast.Node) (interface{
 
 // callParser parse [ast.CallExpr] node, then lookup the symbol table to find
 // a registered function whose type is [FnType]
-func callParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
+func callParser(ectx EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
 	call := node.(*ast.CallExpr)
 	args := make([]interface{}, 0, 1)
 
@@ -162,14 +162,14 @@ func callParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (interface
 
 // parenParser parse a [ast.ParenExpr] node, which returns the value inside a pair of
 // paren
-func parenParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
+func parenParser(ectx EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
 	n := node.(*ast.ParenExpr)
 	return parseNode(ectx, pctx, n.X)
 }
 
 // selectParser parse a [ast.SelectorExpr] node, which will lookup the symbol
 // tab for both the selector and the field, and evaluate them by [SymDot]
-func selectParser(ectx *EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
+func selectParser(ectx EvalContext, pctx *ParseContext, node ast.Node) (interface{}, error) {
 	sel := node.(*ast.SelectorExpr)
 
 	from, err := parseNode(ectx, pctx, sel.X)

@@ -8,22 +8,27 @@ import (
 
 type (
 	// EvalFn evaluates values passed from the parser
-	EvalFn func(ctx *EvalContext, args ...interface{}) (interface{}, error)
+	EvalFn func(ctx EvalContext, args ...interface{}) (interface{}, error)
 
-	// EvalContext maintains states when we evaluate values.
+	EvalContext interface {
+		Eval(sym SymbolKind, args ...interface{}) (interface{}, error)
+		LookupSymbol(key string) (interface{}, bool)
+	}
+
+	// exprEvalContext maintains states when we evaluate values.
 	// It tells how to evaluate by an operator and provide a symbol table for
 	// EvalFn to lookup
 	//
 	// By changing a EvalFn for a operator, we can 'overload' the operator.
 	// By injecting value into symbal tab, we can visit those value outside the
 	// expression
-	EvalContext struct {
+	exprEvalContext struct {
 		symbolTab SymbolTab
 		opFnTab   map[SymbolKind]EvalFn
 	}
 )
 
-var defaultOpFnTab = map[SymbolKind]EvalFn{
+var goExprOpFnTab = map[SymbolKind]EvalFn{
 	SymAnd:   evalLAnd,
 	SymOr:    evalLOr,
 	SymEq:    evalEq,
@@ -31,6 +36,7 @@ var defaultOpFnTab = map[SymbolKind]EvalFn{
 	SymNot:   evalNot,
 	SymDot:   evalDot,
 	SymMinus: evalMinus,
+	SymParen: evalParen,
 
 	SymLess:      newCmpEvalFn(SymLess),
 	SymLessEq:    newCmpEvalFn(SymLessEq),
@@ -38,7 +44,16 @@ var defaultOpFnTab = map[SymbolKind]EvalFn{
 	SymGreaterEq: newCmpEvalFn(SymGreaterEq),
 }
 
-func NewEvalContext(injected SymbolTab) *EvalContext {
+var esQueryOpFnTab = map[SymbolKind]EvalFn{
+	SymAnd:   evalLAnd,
+	SymOr:    evalLOr,
+	SymEq:    evalEq,
+	SymNeq:   evalNeq,
+	SymDot:   evalDot,
+	SymMinus: evalMinus,
+}
+
+func NewEvalContext(injected SymbolTab) *exprEvalContext {
 	symTab := make(map[string]interface{}, len(injected)+len(defaultSymbolTab))
 	for _, tab := range []map[string]interface{}{
 		injected,
@@ -48,13 +63,13 @@ func NewEvalContext(injected SymbolTab) *EvalContext {
 			symTab[k] = v
 		}
 	}
-	return &EvalContext{
+	return &exprEvalContext{
 		symbolTab: symTab,
-		opFnTab:   defaultOpFnTab,
+		opFnTab:   goExprOpFnTab,
 	}
 }
 
-func (c *EvalContext) Eval(sym SymbolKind, args ...interface{}) (interface{}, error) {
+func (c *exprEvalContext) Eval(sym SymbolKind, args ...interface{}) (interface{}, error) {
 	fn := c.opFnTab[sym]
 	if fn == nil {
 		return nil, errors.Wrapf(ErrUnsupportSymbol, "%s", sym)
@@ -62,7 +77,12 @@ func (c *EvalContext) Eval(sym SymbolKind, args ...interface{}) (interface{}, er
 	return fn(c, args...)
 }
 
-func evalId(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func (c *exprEvalContext) LookupSymbol(key string) (interface{}, bool) {
+	v, in := c.symbolTab[key]
+	return v, in
+}
+
+func evalId(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 1 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -72,14 +92,14 @@ func evalId(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 		return nil, errors.Wrap(ErrEvalError, "first argument is not a string")
 	}
 
-	val, in := ctx.symbolTab[id]
+	val, in := ctx.LookupSymbol(id)
 	if !in {
 		return nil, errors.Wrapf(ErrEvalError, "symbol %s not found", id)
 	}
 	return val, nil
 }
 
-func evalDot(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalDot(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -109,7 +129,7 @@ func evalDot(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 	return v.Interface(), nil
 }
 
-func evalMinus(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalMinus(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 1 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -120,7 +140,7 @@ func evalMinus(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 	return -rhs, nil
 }
 
-func evalNot(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalNot(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 1 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -131,7 +151,7 @@ func evalNot(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 	return !rhs, nil
 }
 
-func evalLAnd(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalLAnd(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -153,7 +173,7 @@ func evalLAnd(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 	return lhs && rhs, nil
 }
 
-func evalLOr(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalLOr(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -172,7 +192,7 @@ func evalLOr(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 	return lhs || rhs, nil
 }
 
-func evalNeq(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalNeq(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	res, err := evalEq(ctx, args...)
 	if err != nil {
 		return nil, err
@@ -180,7 +200,7 @@ func evalNeq(ctx *EvalContext, args ...interface{}) (interface{}, error) {
 	return !res.(bool), nil
 }
 
-func evalEq(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+func evalEq(ctx EvalContext, args ...interface{}) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 	}
@@ -255,7 +275,7 @@ func evalFloat64Cmp(sym SymbolKind, x, y float64) (bool, error) {
 }
 
 func newCmpEvalFn(sym SymbolKind) EvalFn {
-	return func(ctx *EvalContext, args ...interface{}) (interface{}, error) {
+	return func(ctx EvalContext, args ...interface{}) (interface{}, error) {
 		if len(args) != 2 {
 			return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
 		}
@@ -276,4 +296,11 @@ func newCmpEvalFn(sym SymbolKind) EvalFn {
 
 		return nil, errors.Wrap(ErrEvalError, "invalid type for comparing")
 	}
+}
+
+func evalParen(ctx EvalContext, args ...interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, errors.Wrap(ErrEvalError, "invalid number of argument")
+	}
+	return args[0], nil
 }

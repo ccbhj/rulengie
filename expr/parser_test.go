@@ -1,14 +1,17 @@
 package expr
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/olivere/elastic/v7"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestEvalOperator(t *testing.T) {
+	t.Skip()
 	cases := map[string]interface{}{
 		`2 == 1 && 1 == 1`:                     false,
 		`1 != 1`:                               false,
@@ -63,6 +66,7 @@ func TestEvalOperator(t *testing.T) {
 }
 
 func TestInjectValue(t *testing.T) {
+	t.Skip()
 	lenFn := func(args ...interface{}) (interface{}, error) {
 		if len(args) != 1 {
 			return nil, errors.New("function len need one argument")
@@ -86,6 +90,7 @@ func TestInjectValue(t *testing.T) {
 }
 
 func TestInjectStruct(t *testing.T) {
+	t.Skip()
 	type Arg struct {
 		S int
 	}
@@ -117,4 +122,23 @@ func TestInjectStruct(t *testing.T) {
 	symbolTab = NewSymbolTab().WithStruct("arg", arg1)
 	_, err = ParseExpr(exp, symbolTab)
 	assert.Error(t, err)
+}
+
+func TestEsParser(t *testing.T) {
+	expr := `query.ic_no != "123" && query.gender != 1 `
+
+	ectx := NewEsQueryCtx(nil)
+	parser, err := NewParseContext(expr)
+	assert.NoError(t, err)
+
+	query, err := parser.ParseAndEval(ectx)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	src, err := query.(*elastic.BoolQuery).Source()
+	assert.NoError(t, err)
+
+	s, err := json.MarshalIndent(src, "", "  ")
+	assert.NoError(t, err)
+	t.Logf("query =\n %s", s)
 }
